@@ -14,6 +14,7 @@ COPY . /src/
 # https://caddy.community/t/how-to-use-dns-provider-modules-in-caddy-2/8148
 RUN xcaddy build \
     --with github.com/caddy-dns/gandi \
+    --with github.com/caddy-dns/digitalocean \
     --with github.com/lucaslorentz/caddy-docker-proxy/plugin/v2=/src/plugin/
 
 RUN ls -la
@@ -21,8 +22,10 @@ RUN ls -la
 # docker build -f Dockerfile.dev --target cdp --tag cdp .
 FROM caddy as cdp
 COPY --from=build /src/caddy /usr/bin/caddy
+COPY Caddyfile /
 
 ENV GANDIV5_API_KEY=
+ENV CADDY_DOCKER_CADDYFILE_PATH=/Caddyfile
 
 #oh :( want it to use the autosave file if its there - unless the /config.caddy.json is newer
 CMD [ "caddy", "docker-proxy" ]

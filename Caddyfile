@@ -1,6 +1,7 @@
 {
     admin 0.0.0.0:2019
-    email sven@{env.STACKDOMAIN}
+    email sven@t.ona.im
+    debug true
 }
 
 (user_headers) {
@@ -8,3 +9,50 @@
     request_header X-Forwarded-User {http.auth.user.id}
 }
 
+(admin) {
+      basicauth {
+              admin JDJhJDEwJFFkUTF3cmNaNzFLUmJBL3dIZnVjNnV5dC9WYlBUOEQ5T1FXdTVMLmc2Vy5MZWZvd2RJR2Nh
+      }
+      header -role
+      header Echo-Loaded true
+      header Image-Name brndnmtthws/nginx-echo-headers
+      import user_headers
+      request_header role admin
+}
+
+(dns_api_gandi) {
+    tls {
+        dns gandi {env.GANDIV5_API_KEY}
+    }
+}
+
+*.loc.alho.st loc.alho.st {
+        import dns_api_gandi
+        @testing_loc_alho_st {
+                host testing.loc.alho.st
+        }
+        route @testing_loc_alho_st {
+                respond "Testing"
+        }
+}
+
+sven.loc.alho.st {
+    respond "SVEN"
+}
+
+(dns_api_do) {
+    tls {
+        dns digitalocean {env.DO_API_KEY}
+    }
+}
+
+(users) {
+      basicauth {
+              first JDJhJDEwJFFkUTF3cmNaNzFLUmJBL3dIZnVjNnV5dC9WYlBUOEQ5T1FXdTVMLmc2Vy5MZWZvd2RJR2Nh
+              second JDJhJDEwJFFkUTF3cmNaNzFLUmJBL3dIZnVjNnV5dC9WYlBUOEQ5T1FXdTVMLmc2Vy5MZWZvd2RJR2Nh
+              third JDJhJDEwJFFkUTF3cmNaNzFLUmJBL3dIZnVjNnV5dC9WYlBUOEQ5T1FXdTVMLmc2Vy5MZWZvd2RJR2Nh
+      }
+      header -role
+      import user_headers
+      request_header role users
+}

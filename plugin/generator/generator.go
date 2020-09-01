@@ -274,7 +274,10 @@ func (g *CaddyfileGenerator) filterLabels(labels map[string]string) map[string]s
 		// hardcoded virtual.port macro
 		if strings.HasPrefix(label, "virtual.port") {
 			log.Printf("[INFO]: in macro %s: %s\n", label, value)
+			// TODO: need to use the STACKDOMAIN that the new container has, not the global caddy one
+			//filteredLabels["caddy"] = "*.{env.STACKDOMAIN} {env.STACKDOMAIN}"
 			filteredLabels["caddy"] = "*.loc.alho.st loc.alho.st"
+			// TODO: is there a safe way to import dns_api
 			log.Printf("[INFO]: out macro %s: %s\n", "caddy", filteredLabels["caddy"])
 
 			reverseProxy := "caddy.route.reverse_proxy"
@@ -290,7 +293,10 @@ func (g *CaddyfileGenerator) filterLabels(labels map[string]string) map[string]s
 		if strings.HasPrefix(label, "virtual.host") {
 			log.Printf("[INFO]: in macro %s: %s\n", label, value)
 
+			// TODO: need to use the STACKDOMAIN that the new container has, not the global caddy one
+			//filteredLabels["caddy"] = "*.{env.STACKDOMAIN} {env.STACKDOMAIN}"
 			filteredLabels["caddy"] = "*.loc.alho.st loc.alho.st"
+			// TODO: is there a safe way to import dns_api
 			log.Printf("[INFO]: out macro %s: %s\n", "caddy", filteredLabels["caddy"])
 
 			// TODO: add virtual.host_1 -> caddy.route_1
