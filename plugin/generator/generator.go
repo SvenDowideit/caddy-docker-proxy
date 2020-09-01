@@ -134,6 +134,22 @@ func (g *CaddyfileGenerator) GenerateCaddyfile() ([]byte, string, []string) {
 			} else {
 				logsBuffer.WriteString(fmt.Sprintf("[ERROR] %v\n", err.Error()))
 			}
+
+			containerTemplateCaddyfile, err := g.getTemplatedCaddyfile(&container, &logsBuffer)
+			if err == nil {
+				if containerTemplateCaddyfile == nil {
+					logsBuffer.WriteString(fmt.Sprintf("[INFO] skipping nil containerTemplateCaddyfile\n"))
+				} else {
+					if len(containerTemplateCaddyfile.Children) == 0 {
+						logsBuffer.WriteString(fmt.Sprintf("[INFO] skipping empty containerTemplateCaddyfile\n"))
+					} else {
+						caddyfileBlock.Merge(containerTemplateCaddyfile)
+
+					}
+				}
+			} else {
+				logsBuffer.WriteString(fmt.Sprintf("[ERROR] %v\n", err.Error()))
+			}
 		}
 	} else {
 		logsBuffer.WriteString(fmt.Sprintf("[ERROR] %v\n", err.Error()))
