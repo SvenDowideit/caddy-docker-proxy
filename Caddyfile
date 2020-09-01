@@ -26,6 +26,19 @@
     }
 }
 
+# caddy.import alho.st <hostname> <port> <path>                            
+(alho_st) {                                                                
+        import dns_api_gandi                                               
+        @{args.0}_alho_st{args.2} {                                        
+                host {args.0}.alho.st                                      
+                path "{args.2}"                                            
+        }                                                                  
+        route @{args.0}_alho_st{args.2} {                                  
+                #respond "{args.0} goes to port {args.1}"                  
+                reverse_proxy {args.1}                                     
+        }                                                                  
+}
+
 *.loc.alho.st loc.alho.st {
         import dns_api_gandi
         @testing_loc_alho_st {

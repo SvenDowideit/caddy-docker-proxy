@@ -1,0 +1,26 @@
+version: "3.7"
+
+services:
+  args:
+    image: jwilder/whoami
+    networks:
+      - cirri_proxy
+    labels:
+      caddy: "*.loc.alho.st loc.alho.st"
+      caddy.import: alho_st arg.loc {{upstreams 8000}} /*
+    #   virtual.port: 8000
+    #   virtual.host: "args.loc.alho.st}"
+  sub:
+    image: jwilder/whoami
+    networks:
+      - cirri_proxy
+    labels:
+      caddy: "*.loc.alho.st loc.alho.st"
+      caddy.import: alho_st arg.loc {{upstreams 8000}} /sub*
+      #caddy.sub_loc_alho_st.path: "/sub /sub/*"
+    #   virtual.port: 8000
+    #   virtual.host: "args.loc.alho.st}"
+
+networks:
+  cirri_proxy:
+    name: cirri_proxy
