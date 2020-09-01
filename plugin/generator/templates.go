@@ -7,6 +7,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/Masterminds/sprig"
 	"github.com/docker/docker/api/types"
 	"github.com/lucaslorentz/caddy-docker-proxy/plugin/v2/caddyfile"
 )
@@ -22,10 +23,10 @@ func (g *CaddyfileGenerator) getTemplatedCaddyfile(container *types.Container, l
 			transformed := []string{}
 			for _, target := range targets {
 				for _, param := range options {
-					if port, isPort := strconv.Atoi(param.(string)); isPort == nil {
-						target = target + ":" + strconv.Itoa(port)
-					} else if protocol, isProtocol := param.(string); isProtocol {
+					if protocol, isProtocol := param.(string); isProtocol {
 						target = protocol + "://" + target
+					} else if port, isPort := param.(int); isPort {
+						target = target + ":" + strconv.Itoa(port)
 					}
 				}
 				transformed = append(transformed, target)
@@ -40,7 +41,7 @@ func (g *CaddyfileGenerator) getTemplatedCaddyfile(container *types.Container, l
 		},
 	}
 
-	t, err := template.New("").Funcs(funcMap).Parse(`
+	t, err := template.New("").Funcs(sprig.TxtFuncMap()).Funcs(funcMap).Parse(`
 {{ if index .Labels "virtual.port" }}
 *.loc.alho.st loc.alho.st {
 			import dns_api_gandi                                               
@@ -48,7 +49,7 @@ func (g *CaddyfileGenerator) getTemplatedCaddyfile(container *types.Container, l
 					host arg.loc.alho.st                    
 			}                                                                  
 			route @arg_loc_alho_st {                                  
-					reverse_proxy {{upstreams ((index .Labels "virtual.port")) }}                                   
+					reverse_proxy {{upstreams ((index .Labels "virtual.port" | int)) }}                                   
 			}                                                                  
 }
 {{ end }}
