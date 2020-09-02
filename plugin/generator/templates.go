@@ -39,6 +39,14 @@ func (g *CaddyfileGenerator) getTemplatedCaddyfile(container *types.Container, l
 		"https": func() string {
 			return "https"
 		},
+		"matcher": func(options ...interface{}) (string, error) {
+			// TODO: only a problem if we need to deal with _1...
+			return strings.TrimPrefix(container.Names[0], "/"), nil
+		},
+		"labels": func(options ...interface{}) (map[string]string, error) {
+			// TODO: mix in image labels...
+			return container.Labels, nil
+		},
 		"hostname": func(options ...interface{}) (string, error) {
 			// if there is a string param, use it.
 			if len(options) == 1 {
@@ -55,15 +63,20 @@ func (g *CaddyfileGenerator) getTemplatedCaddyfile(container *types.Container, l
 		},
 	}
 
+	// TODO: how to deal with _1, _2 etc - multiple routes on one container...
+	// TODO: virtual.domain... (with default..)
 	t, err := template.New("").Funcs(sprig.TxtFuncMap()).Funcs(funcMap).Parse(`
-{{ if index .Labels "virtual.port" }}
+{{ if index labels "virtual.port" }}
 *.loc.alho.st loc.alho.st {
 			import dns_api_gandi
-			@{{hostname ((index .Labels "virtual.host"))}}_loc_alho_st {
-					host {{hostname ((index .Labels "virtual.host"))}}.loc.alho.st
+			@{{matcher}} {
+					host {{hostname ((index labels "virtual.host"))}}.loc.alho.st
+					{{ if index labels "virtual.path" }}
+					path {{ index labels "virtual.path" }}
+					{{ end }}
 			}
-			route @{{hostname ((index .Labels "virtual.host"))}}_loc_alho_st {
-					reverse_proxy {{upstreams ((index .Labels "virtual.port" | int)) }}
+			route @{{matcher}} {
+					reverse_proxy {{upstreams ((index labels "virtual.port" | int)) }}
 			}
 }
 {{ end }}

@@ -16,6 +16,14 @@ services:
     labels:
       virtual.port: 8000
       virtual.host: host
+  sub:
+    image: jwilder/whoami
+    networks:
+      - cirri_proxy
+    labels:
+      virtual.port: 8000
+      virtual.host: host
+      virtual.path: /sub*
 
 networks:
   cirri_proxy:
