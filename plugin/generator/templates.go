@@ -18,6 +18,9 @@ func (g *CaddyfileGenerator) getTemplatedCaddyfile(container *types.Container, l
 	logsBuffer.WriteString(fmt.Sprintf("[INFO] getTemplatedCaddyfile \n"))
 
 	funcMap := template.FuncMap{
+		"entitytype": func(options ...interface{}) (string, error) {
+			return "container", nil
+		},
 		"upstreams": func(options ...interface{}) (string, error) {
 			targets, err := g.getContainerIPAddresses(container, logsBuffer, true) //getTargets()
 			transformed := []string{}
