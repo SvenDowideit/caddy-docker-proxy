@@ -156,9 +156,18 @@ func (g *CaddyfileGenerator) GenerateCaddyfile() ([]byte, string, []string) {
 					}
 				}
 
+				// caddy. labels based config
 				serviceCaddyfile, err := g.getServiceCaddyfile(&service, &logsBuffer)
 				if err == nil {
 					caddyfileBlock.Merge(serviceCaddyfile)
+				} else {
+					logsBuffer.WriteString(fmt.Sprintf("[ERROR] %v\n", err.Error()))
+				}
+
+				// template files based config
+				containerTemplateCaddyfile, err := g.getServiceTemplatedCaddyfile(&service, &logsBuffer)
+				if err == nil {
+					caddyfileBlock.Merge(containerTemplateCaddyfile)
 				} else {
 					logsBuffer.WriteString(fmt.Sprintf("[ERROR] %v\n", err.Error()))
 				}
@@ -168,6 +177,43 @@ func (g *CaddyfileGenerator) GenerateCaddyfile() ([]byte, string, []string) {
 		}
 	} else {
 		logsBuffer.WriteString("[INFO] Skipping services because swarm is not available\n")
+	}
+
+	// Add containers
+	containers, err := g.dockerClient.ContainerList(context.Background(), types.ContainerListOptions{})
+	if err == nil {
+		for _, container := range containers {
+			if _, isControlledServer := container.Labels[g.options.ControlledServersLabel]; isControlledServer {
+				ips, err := g.getContainerIPAddresses(&container, &logsBuffer, false)
+				if err != nil {
+					logsBuffer.WriteString(fmt.Sprintf("[ERROR] %v\n", err.Error()))
+				} else {
+					for _, ip := range ips {
+						if g.options.ControllerNetwork == nil || g.options.ControllerNetwork.Contains(net.ParseIP(ip)) {
+							controlledServers = append(controlledServers, ip)
+						}
+					}
+				}
+			}
+
+			// caddy. labels based config
+			containerCaddyfile, err := g.getContainerCaddyfile(&container, &logsBuffer)
+			if err == nil {
+				caddyfileBlock.Merge(containerCaddyfile)
+			} else {
+				logsBuffer.WriteString(fmt.Sprintf("[ERROR] %v\n", err.Error()))
+			}
+
+			// template files based config
+			containerTemplateCaddyfile, err := g.getContainerTemplatedCaddyfile(&container, &logsBuffer)
+			if err == nil {
+				caddyfileBlock.Merge(containerTemplateCaddyfile)
+			} else {
+				logsBuffer.WriteString(fmt.Sprintf("[ERROR] %v\n", err.Error()))
+			}
+		}
+	} else {
+		logsBuffer.WriteString(fmt.Sprintf("[ERROR] %v\n", err.Error()))
 	}
 
 	// Write global blocks first
@@ -266,6 +312,7 @@ func (g *CaddyfileGenerator) filterLabels(labels map[string]string) map[string]s
 	filteredLabels := map[string]string{}
 	for label, value := range labels {
 		if g.labelRegex.MatchString(label) {
+			log.Printf("[INFO]: label %s: %s\n", label, value)
 			filteredLabels[label] = value
 		}
 	}
