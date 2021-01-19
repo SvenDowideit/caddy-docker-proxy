@@ -110,34 +110,6 @@ func (g *CaddyfileGenerator) GenerateCaddyfile() ([]byte, string, []string) {
 		logsBuffer.WriteString("[INFO] Skipping configs because swarm is not available\n")
 	}
 
-	// Add containers
-	containers, err := g.dockerClient.ContainerList(context.Background(), types.ContainerListOptions{})
-	if err == nil {
-		for _, container := range containers {
-			if _, isControlledServer := container.Labels[g.options.ControlledServersLabel]; isControlledServer {
-				ips, err := g.getContainerIPAddresses(&container, &logsBuffer, false)
-				if err != nil {
-					logsBuffer.WriteString(fmt.Sprintf("[ERROR] %v\n", err.Error()))
-				} else {
-					for _, ip := range ips {
-						if g.options.ControllerNetwork == nil || g.options.ControllerNetwork.Contains(net.ParseIP(ip)) {
-							controlledServers = append(controlledServers, ip)
-						}
-					}
-				}
-			}
-
-			containerCaddyfile, err := g.getContainerCaddyfile(&container, &logsBuffer)
-			if err == nil {
-				caddyfileBlock.Merge(containerCaddyfile)
-			} else {
-				logsBuffer.WriteString(fmt.Sprintf("[ERROR] %v\n", err.Error()))
-			}
-		}
-	} else {
-		logsBuffer.WriteString(fmt.Sprintf("[ERROR] %v\n", err.Error()))
-	}
-
 	// Add services
 	if g.swarmIsAvailable {
 		services, err := g.dockerClient.ServiceList(context.Background(), types.ServiceListOptions{})
