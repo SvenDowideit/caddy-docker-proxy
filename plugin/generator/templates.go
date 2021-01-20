@@ -208,7 +208,7 @@ func setupTemplateDirWatcher() error {
 		// Already initialised
 		return nil
 	}
-	// watch for templates in "/${XDG_CONFIG_HOME}/caddy/docker-proxy/"
+	// watch for templates in "${XDG_CONFIG_HOME}/caddy/docker-proxy/"
 	rootDir := filepath.Join(caddy.AppConfigDir(), "docker-proxy")
 	cleanRoot := filepath.Clean(rootDir)
 	info, err := os.Stat(cleanRoot)

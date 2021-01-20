@@ -255,6 +255,7 @@ reverse_proxy http://192.168.0.1:8080 http://192.168.0.2:8080
 ```
 
 ## Reverse proxy examples
+
 Proxying domain root to container root
 ```
 caddy: example.com
@@ -302,7 +303,7 @@ caddy.reverse_proxy: {{upstreams}}
 
 ## Docker configs
 
-> Note: Docker Swarm only. Alternativly use `CADDY_DOCKER_CADDYFILE_PATH` or `-caddyfile-path`
+> Note: Docker Swarm only. Alternatively use `CADDY_DOCKER_CADDYFILE_PATH` or `-caddyfile-path`
 
 You can also add raw text to your caddyfile using docker configs. Just add caddy label prefix to your configs and the whole config content will be inserted at the beginning of the generated caddyfile, outside any server blocks.
 
@@ -333,6 +334,21 @@ service:
 		caddy: service.example.com
 		caddy.reverse_proxy: {{upstreams}}
 ```
+
+### Docker image labels
+
+Instead of setting the labels on containers or services, you can also set them in your Dockerfile (see [LABELS](https://docs.docker.com/engine/reference/builder/#label)), and then when you create a container or service, they will be added automatically.
+
+For example
+
+```
+FROM nginx:latest
+
+LABEL caddy="lll.township-sl.ona.im"
+LABEL caddy.reverse_proxy="{{upstreams http 80}}"
+```
+
+will automatically work when you `docker run --network caddy_network --rm -it labeled_nginx:latest`, or create a service with it.
 
 ## Execution modes
 
