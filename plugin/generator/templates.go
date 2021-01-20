@@ -12,6 +12,7 @@ import (
 	"text/template"
 
 	"github.com/Masterminds/sprig"
+	"github.com/caddyserver/caddy/v2"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/fsnotify/fsnotify"
@@ -19,6 +20,11 @@ import (
 )
 
 func (g *CaddyfileGenerator) getServiceTemplatedCaddyfile(service *swarm.Service, logsBuffer *bytes.Buffer) (*caddyfile.Container, error) {
+	err := setupTemplateDirWatcher()
+	if err != nil {
+		log.Printf("[INFO]: no template dir to watch %s\n", err)
+		// don't exit, we'll try again later..
+	}
 
 	funcMap := template.FuncMap{
 		"entitytype": func(options ...interface{}) (string, error) {
@@ -64,6 +70,11 @@ func (g *CaddyfileGenerator) getServiceTemplatedCaddyfile(service *swarm.Service
 }
 
 func (g *CaddyfileGenerator) getContainerTemplatedCaddyfile(container *types.Container, logsBuffer *bytes.Buffer) (*caddyfile.Container, error) {
+	err := setupTemplateDirWatcher()
+	if err != nil {
+		log.Printf("[INFO]: no template dir to watch %s\n", err)
+		// don't exit, we'll try again later..
+	}
 
 	funcMap := template.FuncMap{
 		"entitytype": func(options ...interface{}) (string, error) {
@@ -115,7 +126,7 @@ type tmplData struct {
 
 var loadedTemplates *template.Template
 var newTemplate chan tmplData
-var watcher *fsnotify.Watcher
+var templateDirWatcher *fsnotify.Watcher
 
 // NewTemplate adds a new named template to the parsing queue
 func NewTemplate(name, tmpl string) {
@@ -128,62 +139,11 @@ func NewTemplate(name, tmpl string) {
 func init() {
 	newTemplate = make(chan tmplData, 20)
 
-	watcher, err := fsnotify.NewWatcher()
+	err := setupTemplateDirWatcher()
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("[INFO]: no template dir to watch %s\n", err)
+		// don't exit, we'll try again later..
 	}
-	go func() {
-		for {
-			select {
-			case event, ok := <-watcher.Events:
-				if !ok {
-					log.Println("[INFO] Stopping watching for filesystem changes")
-					return
-				}
-				// log.Println("[VERBOSE] event:", event)
-				// if event.Op&fsnotify.Write == fsnotify.Write {
-				// 	log.Println("[INFO] modified file:", event.Name)
-				// }
-				b, err := ioutil.ReadFile(event.Name)
-				if err != nil {
-					log.Printf("[ERROR] reading %s: %s\n", event.Name, err)
-					continue
-				}
-				NewTemplate(event.Name, string(b))
-			case err, ok := <-watcher.Errors:
-				if !ok {
-					log.Println("[INFO] Stopping watching for filesystem changes")
-					return
-				}
-				log.Println("[ERROR] ", err)
-			}
-		}
-	}()
-
-	rootDir := "/config/caddy/docker-proxy/"
-	cleanRoot := filepath.Clean(rootDir)
-	err = watcher.Add(cleanRoot)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// Also need to read the existing files
-	err = filepath.Walk(cleanRoot, func(path string, info os.FileInfo, e1 error) error {
-		if !info.IsDir() && strings.HasSuffix(path, ".tmpl") {
-			log.Printf("[INFO] found template file: %s\n", path)
-			if e1 != nil {
-				log.Printf("[ERROR] problem walking dir: %s\n", e1)
-				return nil // continue with other files
-			}
-
-			b, e2 := ioutil.ReadFile(path)
-			if e2 != nil {
-				log.Printf("[ERROR] problem reading file (%s): %s\n", path, e1)
-				return nil // continue with other files
-			}
-			NewTemplate(path, string(b))
-		}
-		return nil
-	})
 
 	commonFuncMap := template.FuncMap{
 		"http": func() string {
@@ -207,7 +167,7 @@ func (g *CaddyfileGenerator) getTemplatedCaddyfile(data interface{}, funcMap tem
 	for {
 		select {
 		case tmpl := <-newTemplate:
-			log.Printf("[INFO] parsing template: %s\n", tmpl.name)
+			log.Printf("[DEBUG] parsing template: %s\n", tmpl.name)
 			t := loadedTemplates.New("TMPL:" + tmpl.name)
 			_, err := t.Parse(tmpl.tmpl)
 			if err != nil {
@@ -241,4 +201,84 @@ noTemplates:
 	}
 
 	return &block, nil
+}
+
+func setupTemplateDirWatcher() error {
+	if templateDirWatcher != nil {
+		// Already initialised
+		return nil
+	}
+	// watch for templates in "/${XDG_CONFIG_HOME}/caddy/docker-proxy/"
+	rootDir := filepath.Join(caddy.AppConfigDir(), "docker-proxy")
+	cleanRoot := filepath.Clean(rootDir)
+	info, err := os.Stat(cleanRoot)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("docker-proxy template dir (%s) is not a Directory", cleanRoot)
+	}
+
+	templateDirWatcher, err = fsnotify.NewWatcher()
+	if err != nil {
+		log.Fatal(err)
+	}
+	go func() {
+		for {
+			select {
+			case event, ok := <-templateDirWatcher.Events:
+				if !ok {
+					log.Println("[INFO] Stopping watching for filesystem changes")
+					return
+				}
+				if !strings.HasSuffix(event.Name, ".tmpl") {
+					log.Printf("[DEBUG] ignoring non .tmpl file %s\n", event.Name)
+					continue
+				}
+
+				removeBytes := []byte("## removed " + event.Name + " file\n\n")
+				b := removeBytes
+				b, err = ioutil.ReadFile(event.Name)
+				if err != nil {
+					log.Printf("[ERROR] reading %s, will remove from templates: %s\n", event.Name, err)
+					b = removeBytes
+				}
+
+				NewTemplate(event.Name, string(b))
+			case err, ok := <-templateDirWatcher.Errors:
+				if !ok {
+					log.Println("[INFO] Stopping watching for filesystem changes")
+					return
+				}
+				log.Println("[ERROR] ", err)
+			}
+		}
+	}()
+
+	err = templateDirWatcher.Add(cleanRoot)
+	if err != nil {
+		log.Printf("[ERROR] watching %s: %s\n", cleanRoot, err)
+		log.Fatal(err)
+	}
+	log.Printf("[INFO]: Watching %s for updates to files ending with .tmpl\n", cleanRoot)
+
+	// Also need to read the existing files
+	err = filepath.Walk(cleanRoot, func(path string, info os.FileInfo, e1 error) error {
+		if !info.IsDir() && strings.HasSuffix(path, ".tmpl") {
+			log.Printf("[DEBUG] found template file: %s\n", path)
+			if e1 != nil {
+				log.Printf("[ERROR] problem walking dir: %s\n", e1)
+				return nil // continue with other files
+			}
+
+			b, e2 := ioutil.ReadFile(path)
+			if e2 != nil {
+				log.Printf("[ERROR] problem reading file (%s): %s\n", path, e1)
+				return nil // continue with other files
+			}
+			NewTemplate(path, string(b))
+		}
+		return nil
+	})
+	return nil
 }
