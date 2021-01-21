@@ -356,15 +356,33 @@ caddy: example.com example.org
 caddy.reverse_proxy: {{upstreams}}
 ```
 
-## Docker configs
+## Docker Swarm configs
 
-> Note: Docker Swarm only. Alternatively use `CADDY_DOCKER_CADDYFILE_PATH` or `-caddyfile-path`
+> Note: Docker Swarm only. For non-Swarm mode you can use use `CADDY_DOCKER_CADDYFILE_PATH` or `-caddyfile-path`
 
 You can also add raw text to your caddyfile using docker configs. Just add caddy label prefix to your configs and the whole config content will be inserted at the beginning of the generated caddyfile, outside any server blocks.
 
-[Here is an example](examples/standalone.yaml#L4)
+[Here is an example Swarm Compose file](examples/standalone.yaml#L4)
+
+or from the command line:
+
+```
+$ cat label.caddyfile 
+    @label_loc_alho_st {
+            host label.loc.alho.st
+    }
+    route @label_loc_alho_st {
+            respond "Testing swarm label"
+    }
+$ docker config create --label caddy label.loc.alho.st label.caddyfile
+$ curl https://label.loc.alho.st/
+Testing swarm label
+```
+
+
 
 ## Proxying services vs containers
+
 Caddy docker proxy is able to proxy to swarm services or raw containers. Both features are always enabled, and what will differentiate the proxy target is where you define your labels.
 
 ### Services
@@ -404,6 +422,46 @@ LABEL caddy.reverse_proxy="{{upstreams http 80}}"
 ```
 
 will automatically work when you `docker run --network caddy_network --rm -it labeled_nginx:latest`, or create a service with it.
+
+## Golang template based configurations
+
+**TODO**
+
+### Static template files
+
+To define your own Caddyfile entries, or even process custom container labels into Caddyfile entries, you can use golang templates defined in `*.tmpl` in the `${XDG_CONFIG_HOME}/caddy/docker-proxy/` or `./caddy/docker-proxy/` (if `XGD_CONFIG_HOME` is not defined) directory. This directory is watched for changes, so you can add, remove or rename tmpl files, and they will be used.
+
+For example, to create a **TODO**
+
+### Docker Swarm label template files
+
+The `caddy.template` label can be added to Docker Swarm config's can be used to add text data into the templates evaluated by this plugin.
+
+The following example adds a template that will add another Caddy matcher and route to expose Prometheus metrics endpoints on a port denoted by the label `virtual.metrics` , able to be accessed using `https://container.domain/metrics`:
+
+```
+$ cat label.caddyfile.tmpl
+{{- if index labels "virtual.metrics" }}
+*.{{template "domain"}} {{template "domain"}} {
+	import dns_api_gandi
+	@{{matcher}}_metrics {
+			host {{template "hostmatcher"}}
+			path /metrics
+	}
+	route @{{matcher}}_metrics {
+			reverse_proxy {{upstreams ((index labels "virtual.metrics" | int)) }}
+	}
+	{{end}}
+}
+{{ end -}}
+$ docker config create --label caddy.template caddy-metrics-tmpl label.caddyfile.tmpl
+```
+
+
+
+
+
+
 
 ## Execution modes
 

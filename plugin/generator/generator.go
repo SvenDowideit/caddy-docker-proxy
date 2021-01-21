@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -108,6 +109,28 @@ func (g *CaddyfileGenerator) GenerateCaddyfile() ([]byte, string, []string) {
 		}
 	} else {
 		logsBuffer.WriteString("[INFO] Skipping configs because swarm is not available\n")
+	}
+
+	// Add Caddyfile templates from swarm configs
+	if g.swarmIsAvailable {
+		configs, err := g.dockerClient.ConfigList(context.Background(), types.ConfigListOptions{})
+		if err == nil {
+			caddyTemplateLabelName := strings.Join([]string{g.options.LabelPrefix, "template"}, ".")
+			for _, config := range configs {
+				if _, hasLabel := config.Spec.Labels[caddyTemplateLabelName]; hasLabel {
+					fullConfig, _, err := g.dockerClient.ConfigInspectWithRaw(context.Background(), config.ID)
+					if err != nil {
+						logsBuffer.WriteString(fmt.Sprintf("[ERROR] %v\n", err.Error()))
+					} else {
+						NewTemplate(config.Spec.Name, string(fullConfig.Spec.Data))
+					}
+				}
+			}
+		} else {
+			logsBuffer.WriteString(fmt.Sprintf("[ERROR] %v\n", err.Error()))
+		}
+	} else {
+		logsBuffer.WriteString("[INFO] Skipping config templates because swarm is not available\n")
 	}
 
 	// Add services
