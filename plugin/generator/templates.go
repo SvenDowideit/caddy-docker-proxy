@@ -28,7 +28,7 @@ func (g *CaddyfileGenerator) getServiceTemplatedCaddyfile(service *swarm.Service
 
 	funcMap := template.FuncMap{
 		"entitytype": func(options ...interface{}) (string, error) {
-			return "container", nil
+			return "service", nil
 		},
 		"upstreams": func(options ...interface{}) (string, error) {
 			targets, err := g.getServiceProxyTargets(service, logsBuffer, true)
@@ -43,14 +43,23 @@ func (g *CaddyfileGenerator) getServiceTemplatedCaddyfile(service *swarm.Service
 				}
 				transformed = append(transformed, target)
 			}
+			logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Swarm service upstreams %s\n", transformed))
 			return strings.Join(transformed, " "), err
 		},
 		"matcher": func(options ...interface{}) (string, error) {
 			// TODO: only a problem if we need to deal with _1...
-			return strings.TrimPrefix(service.Spec.Name, "/"), nil
+			matcher := strings.TrimPrefix(service.Spec.Name, "/")
+			logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Swarm service matcher %s\n", matcher))
+
+			return matcher, nil
 		},
 		"labels": func(options ...interface{}) (map[string]string, error) {
-			// TODO: mix in image labels...
+			// TODO: mix in image labels - otherwise we miss things like image based virtual.port..
+
+			// TODO: this is not the only place services have labels :/
+
+			logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Swarm service Labels %s\n", service.Spec.Labels))
+
 			return service.Spec.Labels, nil
 		},
 		"hostname": func(options ...interface{}) (string, error) {
