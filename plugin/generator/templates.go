@@ -102,14 +102,20 @@ func (g *CaddyfileGenerator) getContainerTemplatedCaddyfile(container *types.Con
 				}
 				transformed = append(transformed, target)
 			}
+			logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Container upstreams %s\n", transformed))
 			return strings.Join(transformed, " "), err
 		},
 		"matcher": func(options ...interface{}) (string, error) {
 			// TODO: only a problem if we need to deal with _1...
-			return strings.TrimPrefix(container.Names[0], "/"), nil
+			matcher := strings.TrimPrefix(container.Names[0], "/")
+			logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Container matcher %s\n", matcher))
+
+			return matcher, nil
 		},
 		"labels": func(options ...interface{}) (map[string]string, error) {
 			// TODO: mix in image labels...
+			logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Container Labels %s\n", container.Labels))
+
 			return container.Labels, nil
 		},
 		"hostname": func(options ...interface{}) (string, error) {
