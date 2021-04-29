@@ -138,7 +138,7 @@ func (g *CaddyfileGenerator) GenerateCaddyfile() ([]byte, string, []string) {
 		services, err := g.dockerClient.ServiceList(context.Background(), types.ServiceListOptions{})
 		if err == nil {
 			for _, service := range services {
-				logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Swarm service %s\n", service.ID))
+				logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Swarm service %s\n", service.Spec.Name))
 
 				if _, isControlledServer := service.Spec.Labels[g.options.ControlledServersLabel]; isControlledServer {
 					ips, err := g.getServiceTasksIps(&service, &logsBuffer, false)
@@ -187,6 +187,8 @@ func (g *CaddyfileGenerator) GenerateCaddyfile() ([]byte, string, []string) {
 
 				continue
 			}
+			logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Container %s\n", container.Names[0]))
+
 			if _, isControlledServer := container.Labels[g.options.ControlledServersLabel]; isControlledServer {
 				ips, err := g.getContainerIPAddresses(&container, &logsBuffer, false)
 				if err != nil {
@@ -211,6 +213,8 @@ func (g *CaddyfileGenerator) GenerateCaddyfile() ([]byte, string, []string) {
 			// template files based config
 			containerTemplateCaddyfile, err := g.getContainerTemplatedCaddyfile(&container, &logsBuffer)
 			if err == nil {
+				logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Container caddy template %s\n", containerTemplateCaddyfile.Marshal()))
+
 				caddyfileBlock.Merge(containerTemplateCaddyfile)
 			} else {
 				logsBuffer.WriteString(fmt.Sprintf("[ERROR] %v\n", err.Error()))
