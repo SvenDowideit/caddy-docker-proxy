@@ -17,9 +17,11 @@ import (
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/fsnotify/fsnotify"
 	"github.com/lucaslorentz/caddy-docker-proxy/plugin/v2/caddyfile"
+
+	"go.uber.org/zap"
 )
 
-func (g *CaddyfileGenerator) getServiceTemplatedCaddyfile(service *swarm.Service, logsBuffer *bytes.Buffer) (*caddyfile.Container, error) {
+func (g *CaddyfileGenerator) getServiceTemplatedCaddyfile(service *swarm.Service, logger *zap.Logger) (*caddyfile.Container, error) {
 	err := setupTemplateDirWatcher()
 	if err != nil {
 		log.Printf("[INFO]: no template dir to watch %s\n", err)
@@ -27,15 +29,14 @@ func (g *CaddyfileGenerator) getServiceTemplatedCaddyfile(service *swarm.Service
 	}
 
 	matcher := strings.TrimPrefix(service.Spec.Name, "/")
-	logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Swarm service matcher %s\n", matcher))
-	logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Swarm service Labels %s\n", service.Spec.Labels))
+	logger.Debug("getServiceTemplatedCaddyfile", zap.String("matcher", matcher), zap.String("labels", fmt.Sprintf("%v", service.Spec.Labels)))
 
 	funcMap := template.FuncMap{
 		"entitytype": func(options ...interface{}) (string, error) {
 			return "service", nil
 		},
 		"upstreams": func(options ...interface{}) (string, error) {
-			targets, err := g.getServiceProxyTargets(service, logsBuffer, true)
+			targets, err := g.getServiceProxyTargets(service, logger, true)
 			transformed := []string{}
 			for _, target := range targets {
 				for _, param := range options {
@@ -47,7 +48,8 @@ func (g *CaddyfileGenerator) getServiceTemplatedCaddyfile(service *swarm.Service
 				}
 				transformed = append(transformed, target)
 			}
-			logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Swarm service upstreams %s\n", transformed))
+			logger.Debug("getServiceTemplatedCaddyfile", zap.Strings("upstreams", transformed))
+
 			return strings.Join(transformed, " "), err
 		},
 		"matcher": func(options ...interface{}) (string, error) {
@@ -69,10 +71,10 @@ func (g *CaddyfileGenerator) getServiceTemplatedCaddyfile(service *swarm.Service
 			return strings.TrimPrefix(service.Spec.Name, "/"), nil
 		},
 	}
-	return g.getTemplatedCaddyfile(service, funcMap, logsBuffer)
+	return g.getTemplatedCaddyfile(service, funcMap, logger)
 }
 
-func (g *CaddyfileGenerator) getContainerTemplatedCaddyfile(container *types.Container, logsBuffer *bytes.Buffer) (*caddyfile.Container, error) {
+func (g *CaddyfileGenerator) getContainerTemplatedCaddyfile(container *types.Container, logger *zap.Logger) (*caddyfile.Container, error) {
 	err := setupTemplateDirWatcher()
 	if err != nil {
 		log.Printf("[INFO]: no template dir to watch %s\n", err)
@@ -80,16 +82,14 @@ func (g *CaddyfileGenerator) getContainerTemplatedCaddyfile(container *types.Con
 	}
 
 	matcher := strings.TrimPrefix(container.Names[0], "/")
-	logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Container matcher %s\n", matcher))
-
-	logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Container Labels %s\n", container.Labels))
+	logger.Debug("getContainerTemplatedCaddyfile", zap.String("matcher", matcher), zap.String("labels", fmt.Sprintf("%v", container.Labels)))
 
 	funcMap := template.FuncMap{
 		"entitytype": func(options ...interface{}) (string, error) {
 			return "container", nil
 		},
 		"upstreams": func(options ...interface{}) (string, error) {
-			targets, err := g.getContainerIPAddresses(container, logsBuffer, true)
+			targets, err := g.getContainerIPAddresses(container, logger, true)
 			transformed := []string{}
 			for _, target := range targets {
 				for _, param := range options {
@@ -101,7 +101,7 @@ func (g *CaddyfileGenerator) getContainerTemplatedCaddyfile(container *types.Con
 				}
 				transformed = append(transformed, target)
 			}
-			logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Container upstreams %s\n", transformed))
+			logger.Debug("getContainerTemplatedCaddyfile", zap.Strings("upstreams", transformed))
 			return strings.Join(transformed, " "), err
 		},
 		"matcher": func(options ...interface{}) (string, error) {
@@ -123,7 +123,7 @@ func (g *CaddyfileGenerator) getContainerTemplatedCaddyfile(container *types.Con
 			return strings.TrimPrefix(container.Names[0], "/"), nil
 		},
 	}
-	return g.getTemplatedCaddyfile(container, funcMap, logsBuffer)
+	return g.getTemplatedCaddyfile(container, funcMap, logger)
 }
 
 type tmplData struct {
@@ -164,7 +164,7 @@ func init() {
 
 }
 
-func (g *CaddyfileGenerator) getTemplatedCaddyfile(data interface{}, funcMap template.FuncMap, logsBuffer *bytes.Buffer) (*caddyfile.Container, error) {
+func (g *CaddyfileGenerator) getTemplatedCaddyfile(data interface{}, funcMap template.FuncMap, logger *zap.Logger) (*caddyfile.Container, error) {
 	// TODO: how to deal with _1, _2 etc - multiple routes on one container...
 
 	// TODO: need to extract the funcMap, or abstract it better, as we need to over-ride it to cater for the difference between container and service
@@ -174,11 +174,12 @@ func (g *CaddyfileGenerator) getTemplatedCaddyfile(data interface{}, funcMap tem
 	for {
 		select {
 		case tmpl := <-newTemplate:
-			log.Printf("[DEBUG] parsing template: %s\n", tmpl.name)
+			logger.Debug("parsing template", zap.String("name", tmpl.name))
+
 			t := loadedTemplates.New("TMPL:" + tmpl.name)
 			_, err := t.Parse(tmpl.tmpl)
 			if err != nil {
-				log.Printf("[ERROR] problem parsing template(%s): %s\n", tmpl.name, err)
+				logger.Error("parsing template", zap.String("name", tmpl.name), zap.Error(err))
 			}
 		default:
 			// no changed templates found
@@ -195,13 +196,13 @@ noTemplates:
 		var writer bytes.Buffer
 		err := loadedTemplates.ExecuteTemplate(&writer, tmpl.Name(), data)
 		if err != nil {
-			logsBuffer.WriteString(fmt.Sprintf("[ERROR] ExecuteTemplate (%v)\n", err))
+			logger.Error("ExecuteTemplate", zap.String("name", tmpl.Name()), zap.Error(err))
 			continue
 		}
 
 		newblock, err := caddyfile.Unmarshal(writer.Bytes())
 		if err != nil {
-			log.Printf("[ERROR] problem converting template to caddyfile block: %s\n", err)
+			logger.Error("problem converting template to caddyfile block", zap.String("name", tmpl.Name()), zap.Error(err))
 			continue
 		}
 		block.Merge(newblock)
