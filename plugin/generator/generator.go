@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net"
 	"regexp"
 	"strings"
@@ -53,7 +52,7 @@ func (g *CaddyfileGenerator) GenerateCaddyfile(logger *zap.Logger) ([]byte, []st
 	var caddyfileBuffer bytes.Buffer
 
 	if g.ingressNetworks == nil {
-		ingressNetworks, err := g.getIngressNetworks()
+		ingressNetworks, err := g.getIngressNetworks(logger)
 		if err == nil {
 			g.ingressNetworks = ingressNetworks
 		} else {
@@ -62,7 +61,7 @@ func (g *CaddyfileGenerator) GenerateCaddyfile(logger *zap.Logger) ([]byte, []st
 	}
 
 	if time.Since(g.swarmIsAvailableTime) > swarmAvailabilityCacheInterval {
-		g.checkSwarmAvailability(time.Time.IsZero(g.swarmIsAvailableTime))
+		g.checkSwarmAvailability(logger, time.Time.IsZero(g.swarmIsAvailableTime))
 		g.swarmIsAvailableTime = time.Now()
 	}
 
@@ -262,22 +261,22 @@ func (g *CaddyfileGenerator) GenerateCaddyfile(logger *zap.Logger) ([]byte, []st
 	return caddyfileContent, controlledServers
 }
 
-func (g *CaddyfileGenerator) checkSwarmAvailability(isFirstCheck bool) {
+func (g *CaddyfileGenerator) checkSwarmAvailability(logger *zap.Logger, isFirstCheck bool) {
 	info, err := g.dockerClient.Info(context.Background())
 	if err == nil {
 		newSwarmIsAvailable := info.Swarm.LocalNodeState == swarm.LocalNodeStateActive
 		if isFirstCheck || newSwarmIsAvailable != g.swarmIsAvailable {
-			log.Printf("[INFO] Swarm is available: %v\n", newSwarmIsAvailable)
+			logger.Info("Swarm is available", zap.Bool("new", newSwarmIsAvailable))
 		}
 		g.swarmIsAvailable = newSwarmIsAvailable
 	} else {
-		log.Printf("[ERROR] Swarm availability check failed: %v\n", err.Error())
+		logger.Error("Swarm availability check failed", zap.Error(err))
 
 		g.swarmIsAvailable = false
 	}
 }
 
-func (g *CaddyfileGenerator) getIngressNetworks() (map[string]bool, error) {
+func (g *CaddyfileGenerator) getIngressNetworks(logger *zap.Logger) (map[string]bool, error) {
 	ingressNetworks := map[string]bool{}
 
 	if len(g.options.IngressNetworks) > 0 {
@@ -300,7 +299,7 @@ func (g *CaddyfileGenerator) getIngressNetworks() (map[string]bool, error) {
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("[INFO] Caddy ContainerID: %v\n", containerID)
+		logger.Info("Caddy ContainerID", zap.String("ID", containerID))
 		container, err := g.dockerClient.ContainerInspect(context.Background(), containerID)
 		if err != nil {
 			return nil, err
@@ -318,7 +317,7 @@ func (g *CaddyfileGenerator) getIngressNetworks() (map[string]bool, error) {
 		}
 	}
 
-	log.Printf("[INFO] IngressNetworksMap: %v\n", ingressNetworks)
+	logger.Info("IngressNetworksMap", zap.String("ingres", fmt.Sprintf("%v", ingressNetworks)))
 
 	return ingressNetworks, nil
 }
@@ -327,7 +326,6 @@ func (g *CaddyfileGenerator) filterLabels(labels map[string]string) map[string]s
 	filteredLabels := map[string]string{}
 	for label, value := range labels {
 		if g.labelRegex.MatchString(label) {
-			log.Printf("[INFO]: label %s: %s\n", label, value)
 			filteredLabels[label] = value
 		}
 	}

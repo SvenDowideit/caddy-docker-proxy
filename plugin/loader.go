@@ -46,6 +46,11 @@ func CreateDockerLoader(options *config.Options) *DockerLoader {
 	}
 }
 
+func logger() *zap.Logger {
+	return caddy.Log().
+		Named("docker-proxy")
+}
+
 // Start docker loader
 func (dockerLoader *DockerLoader) Start() error {
 	if !dockerLoader.initialized {
@@ -53,13 +58,13 @@ func (dockerLoader *DockerLoader) Start() error {
 
 		dockerClient, err := client.NewEnvClient()
 		if err != nil {
-			caddy.Log().Error("Docker connection failed", zap.Error(err))
+			logger().Error("Docker connection failed", zap.Error(err))
 			return err
 		}
 
 		dockerPing, err := dockerClient.Ping(context.Background())
 		if err != nil {
-			caddy.Log().Error("Docker ping failed", zap.Error(err))
+			logger().Error("Docker ping failed", zap.Error(err))
 			return err
 		}
 
@@ -74,12 +79,15 @@ func (dockerLoader *DockerLoader) Start() error {
 			dockerLoader.options,
 		)
 
-		caddy.Log().Info("CaddyfilePath: %v", zap.String("caddyfile", dockerLoader.options.CaddyfilePath))
-		caddy.Log().Info("LabelPrefix: %v", zap.String("prefix", dockerLoader.options.LabelPrefix))
-		caddy.Log().Info("PollingInterval: %v", zap.Duration("interval", dockerLoader.options.PollingInterval))
-		caddy.Log().Info("ProcessCaddyfile: %v", zap.Bool("process", dockerLoader.options.ProcessCaddyfile))
-		caddy.Log().Info("ProxyServiceTasks: %v", zap.Bool("service", dockerLoader.options.ProxyServiceTasks))
-		caddy.Log().Info("IngressNetworks: %v", zap.String("networks", fmt.Sprintf("%v", dockerLoader.options.IngressNetworks)))
+		logger().Info(
+			"Start",
+			zap.String("CaddyfilePath", dockerLoader.options.CaddyfilePath),
+			zap.String("LabelPrefix", dockerLoader.options.LabelPrefix),
+			zap.Duration("PollingInterval", dockerLoader.options.PollingInterval),
+			zap.Bool("ProcessCaddyfile", dockerLoader.options.ProcessCaddyfile),
+			zap.Bool("ProxyServiceTasks", dockerLoader.options.ProxyServiceTasks),
+			zap.String("IngressNetworks", fmt.Sprintf("%v", dockerLoader.options.IngressNetworks)),
+		)
 
 		dockerLoader.timer = time.AfterFunc(0, func() {
 			dockerLoader.update()
@@ -112,7 +120,7 @@ func (dockerLoader *DockerLoader) listenEvents() {
 		Filters: args,
 	})
 
-	caddy.Log().Info("Connecting to docker events")
+	logger().Info("Connecting to docker events")
 
 ListenEvents:
 	for {
@@ -140,7 +148,7 @@ ListenEvents:
 		case err := <-errorChan:
 			cancel()
 			if err != nil {
-				caddy.Log().Error("Docker events error", zap.Error(err))
+				logger().Error("Docker events error", zap.Error(err))
 			}
 			break ListenEvents
 		}
@@ -151,29 +159,29 @@ func (dockerLoader *DockerLoader) update() bool {
 	dockerLoader.timer.Reset(dockerLoader.options.PollingInterval)
 	dockerLoader.skipEvents = false
 
-	caddyfile, controlledServers := dockerLoader.generator.GenerateCaddyfile(caddy.Log())
+	caddyfile, controlledServers := dockerLoader.generator.GenerateCaddyfile(logger())
 
 	caddyfileChanged := !bytes.Equal(dockerLoader.lastCaddyfile, caddyfile)
 
 	dockerLoader.lastCaddyfile = caddyfile
 
 	if caddyfileChanged {
-		caddy.Log().Info("New Caddyfile", zap.ByteString("caddyfile", caddyfile))
+		logger().Info("New Caddyfile", zap.ByteString("caddyfile", caddyfile))
 
 		adapter := caddyconfig.GetAdapter("caddyfile")
 
 		configJSON, warn, err := adapter.Adapt(caddyfile, nil)
 
 		if warn != nil {
-			caddy.Log().Warn("Caddyfile to json warning: %v", zap.String("warn", fmt.Sprintf("%v", warn)))
+			logger().Warn("Caddyfile to json warning: %v", zap.String("warn", fmt.Sprintf("%v", warn)))
 		}
 
 		if err != nil {
-			caddy.Log().Error("Failed to convert caddyfile into json config", zap.Error(err))
+			logger().Error("Failed to convert caddyfile into json config", zap.Error(err))
 			return false
 		}
 
-		caddy.Log().Info("New Config JSON", zap.ByteString("json", configJSON))
+		logger().Info("New Config JSON", zap.ByteString("json", configJSON))
 
 		dockerLoader.lastJSONConfig = configJSON
 		dockerLoader.lastVersion++
@@ -208,43 +216,43 @@ func (dockerLoader *DockerLoader) updateServer(wg *sync.WaitGroup, server string
 		return
 	}
 
-	caddy.Log().Info("Sending configuration to", zap.String("server", server))
+	logger().Info("Sending configuration to", zap.String("server", server))
 
 	url := "http://" + server + ":2019/load"
 
 	postBody, err := addAdminListen(dockerLoader.lastJSONConfig, "tcp/"+server+":2019")
 	if err != nil {
-		caddy.Log().Error("Failed to add admin listen to", zap.String("server", server), zap.Error(err))
+		logger().Error("Failed to add admin listen to", zap.String("server", server), zap.Error(err))
 		return
 	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(postBody))
 	if err != nil {
-		caddy.Log().Error("Failed to create request to", zap.String("server", server), zap.Error(err))
+		logger().Error("Failed to create request to", zap.String("server", server), zap.Error(err))
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 
 	if err != nil {
-		caddy.Log().Error("Failed to send configuration to", zap.String("server", server), zap.Error(err))
+		logger().Error("Failed to send configuration to", zap.String("server", server), zap.Error(err))
 		return
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		caddy.Log().Error("Failed to read response from", zap.String("server", server), zap.Error(err))
+		logger().Error("Failed to read response from", zap.String("server", server), zap.Error(err))
 		return
 	}
 
 	if resp.StatusCode != 200 {
-		caddy.Log().Error("Error response from %v - %s", zap.String("server", server), zap.Int("status code", resp.StatusCode), zap.ByteString("body", bodyBytes))
+		logger().Error("Error response from %v - %s", zap.String("server", server), zap.Int("status code", resp.StatusCode), zap.ByteString("body", bodyBytes))
 		return
 	}
 
 	dockerLoader.serversVersions.Set(server, version)
 
-	caddy.Log().Info("Successfully configured", zap.String("server", server))
+	logger().Info("Successfully configured", zap.String("server", server))
 }
 
 func addAdminListen(configJSON []byte, listen string) ([]byte, error) {

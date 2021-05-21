@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -22,9 +21,9 @@ import (
 )
 
 func (g *CaddyfileGenerator) getServiceTemplatedCaddyfile(service *swarm.Service, logger *zap.Logger) (*caddyfile.Container, error) {
-	err := setupTemplateDirWatcher()
+	err := setupTemplateDirWatcher(logger)
 	if err != nil {
-		log.Printf("[INFO]: no template dir to watch %s\n", err)
+		logger.Info("no template dir to watch", zap.Error(err))
 		// don't exit, we'll try again later..
 	}
 
@@ -75,9 +74,9 @@ func (g *CaddyfileGenerator) getServiceTemplatedCaddyfile(service *swarm.Service
 }
 
 func (g *CaddyfileGenerator) getContainerTemplatedCaddyfile(container *types.Container, logger *zap.Logger) (*caddyfile.Container, error) {
-	err := setupTemplateDirWatcher()
+	err := setupTemplateDirWatcher(logger)
 	if err != nil {
-		log.Printf("[INFO]: no template dir to watch %s\n", err)
+		logger.Info("no template dir to watch", zap.Error(err))
 		// don't exit, we'll try again later..
 	}
 
@@ -146,11 +145,12 @@ func NewTemplate(name, tmpl string) {
 func init() {
 	newTemplate = make(chan tmplData, 20)
 
-	err := setupTemplateDirWatcher()
-	if err != nil {
-		log.Printf("[INFO]: no template dir to watch %s\n", err)
-		// don't exit, we'll try again later..
-	}
+	// // TODO: not the right log
+	// err := setupTemplateDirWatcher(caddy.Logs())
+	// if err != nil {
+	// 	logger.Info("no template dir to watch", zap.Error(err))
+	// 	// don't exit, we'll try again later..
+	// }
 
 	commonFuncMap := template.FuncMap{
 		"http": func() string {
@@ -211,7 +211,7 @@ noTemplates:
 	return &block, nil
 }
 
-func setupTemplateDirWatcher() error {
+func setupTemplateDirWatcher(logger *zap.Logger) error {
 	if templateDirWatcher != nil {
 		// Already initialised
 		return nil
@@ -229,18 +229,18 @@ func setupTemplateDirWatcher() error {
 
 	templateDirWatcher, err = fsnotify.NewWatcher()
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal("Failed to create watcher", zap.Error(err))
 	}
 	go func() {
 		for {
 			select {
 			case event, ok := <-templateDirWatcher.Events:
 				if !ok {
-					log.Println("[INFO] Stopping watching for filesystem changes")
+					logger.Info("Stopping watching for filesystem changes")
 					return
 				}
 				if !strings.HasSuffix(event.Name, ".tmpl") {
-					log.Printf("[DEBUG] ignoring non .tmpl file %s\n", event.Name)
+					logger.Debug("ignoring non .tmpl file", zap.String("name", event.Name))
 					continue
 				}
 
@@ -248,40 +248,42 @@ func setupTemplateDirWatcher() error {
 				b := removeBytes
 				b, err = ioutil.ReadFile(event.Name)
 				if err != nil {
-					log.Printf("[ERROR] reading %s, will remove from templates: %s\n", event.Name, err)
+					logger.Error("reading event, will remove from templates", zap.String("name", event.Name), zap.Error(err))
+
 					b = removeBytes
 				}
 
 				NewTemplate(event.Name, string(b))
 			case err, ok := <-templateDirWatcher.Errors:
 				if !ok {
-					log.Println("[INFO] Stopping watching for filesystem changes")
+					logger.Info("Stopping watching for filesystem changes")
 					return
 				}
-				log.Println("[ERROR] ", err)
+				logger.Error("watcher error", zap.Error(err))
 			}
 		}
 	}()
 
 	err = templateDirWatcher.Add(cleanRoot)
 	if err != nil {
-		log.Printf("[ERROR] watching %s: %s\n", cleanRoot, err)
-		log.Fatal(err)
+		logger.Error("watcher error", zap.String("dir", cleanRoot), zap.Error(err))
+		logger.Fatal("watcher error", zap.String("dir", cleanRoot), zap.Error(err))
 	}
-	log.Printf("[INFO]: Watching %s for updates to files ending with .tmpl\n", cleanRoot)
+	logger.Info("Watching for updates to files ending with .tmp", zap.String("dir", cleanRoot))
 
 	// Also need to read the existing files
 	err = filepath.Walk(cleanRoot, func(path string, info os.FileInfo, e1 error) error {
 		if !info.IsDir() && strings.HasSuffix(path, ".tmpl") {
-			log.Printf("[DEBUG] found template file: %s\n", path)
+			logger.Debug("found template file", zap.String("file", path))
+
 			if e1 != nil {
-				log.Printf("[ERROR] problem walking dir: %s\n", e1)
+				logger.Error("problem walking dir", zap.Error(e1))
 				return nil // continue with other files
 			}
 
 			b, e2 := ioutil.ReadFile(path)
 			if e2 != nil {
-				log.Printf("[ERROR] problem reading file (%s): %s\n", path, e1)
+				logger.Error("problem reading file", zap.String("file", path), zap.Error(e1))
 				return nil // continue with other files
 			}
 			NewTemplate(path, string(b))
