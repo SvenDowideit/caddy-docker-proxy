@@ -183,8 +183,8 @@ func (g *CaddyfileGenerator) GenerateCaddyfile(logger *zap.Logger) ([]byte, []st
 	containers, err := g.dockerClient.ContainerList(context.Background(), types.ContainerListOptions{})
 	if err == nil {
 		for _, container := range containers {
-			if serviceName, isService := container.Labels["com.docker.swarm.service.id"]; isService {
-				logger.Debug("Skipping, as its a Swarm service task", zap.String("container", container.Names[0]), zap.String("service", serviceName))
+			if _ /*serviceName */, isService := container.Labels["com.docker.swarm.service.id"]; isService {
+				//logger.Debug("Skipping, as its a Swarm service task", zap.String("container", container.Names[0]), zap.String("service", serviceName))
 				continue
 			}
 			logger.Debug("Container", zap.String("container", container.Names[0]))

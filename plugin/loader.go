@@ -35,17 +35,14 @@ type DockerLoader struct {
 	lastVersion     int64
 	serversVersions *StringInt64CMap
 	serversUpdating *StringBoolCMap
-	logger          *zap.Logger
 }
 
 // CreateDockerLoader creates a docker loader
 func CreateDockerLoader(options *config.Options) *DockerLoader {
-	l, _ := zap.NewProduction()
 	return &DockerLoader{
 		options:         options,
 		serversVersions: newStringInt64CMap(),
 		serversUpdating: newStringBoolCMap(),
-		logger:          l,
 	}
 }
 
@@ -56,13 +53,13 @@ func (dockerLoader *DockerLoader) Start() error {
 
 		dockerClient, err := client.NewEnvClient()
 		if err != nil {
-			dockerLoader.logger.Error("Docker connection failed", zap.Error(err))
+			caddy.Log().Error("Docker connection failed", zap.Error(err))
 			return err
 		}
 
 		dockerPing, err := dockerClient.Ping(context.Background())
 		if err != nil {
-			dockerLoader.logger.Error("Docker ping failed", zap.Error(err))
+			caddy.Log().Error("Docker ping failed", zap.Error(err))
 			return err
 		}
 
@@ -77,12 +74,12 @@ func (dockerLoader *DockerLoader) Start() error {
 			dockerLoader.options,
 		)
 
-		dockerLoader.logger.Info("CaddyfilePath: %v", zap.String("caddyfile", dockerLoader.options.CaddyfilePath))
-		dockerLoader.logger.Info("LabelPrefix: %v", zap.String("prefix", dockerLoader.options.LabelPrefix))
-		dockerLoader.logger.Info("PollingInterval: %v", zap.Duration("interval", dockerLoader.options.PollingInterval))
-		dockerLoader.logger.Info("ProcessCaddyfile: %v", zap.Bool("process", dockerLoader.options.ProcessCaddyfile))
-		dockerLoader.logger.Info("ProxyServiceTasks: %v", zap.Bool("service", dockerLoader.options.ProxyServiceTasks))
-		dockerLoader.logger.Info("IngressNetworks: %v", zap.String("networks", fmt.Sprintf("%v", dockerLoader.options.IngressNetworks)))
+		caddy.Log().Info("CaddyfilePath: %v", zap.String("caddyfile", dockerLoader.options.CaddyfilePath))
+		caddy.Log().Info("LabelPrefix: %v", zap.String("prefix", dockerLoader.options.LabelPrefix))
+		caddy.Log().Info("PollingInterval: %v", zap.Duration("interval", dockerLoader.options.PollingInterval))
+		caddy.Log().Info("ProcessCaddyfile: %v", zap.Bool("process", dockerLoader.options.ProcessCaddyfile))
+		caddy.Log().Info("ProxyServiceTasks: %v", zap.Bool("service", dockerLoader.options.ProxyServiceTasks))
+		caddy.Log().Info("IngressNetworks: %v", zap.String("networks", fmt.Sprintf("%v", dockerLoader.options.IngressNetworks)))
 
 		dockerLoader.timer = time.AfterFunc(0, func() {
 			dockerLoader.update()
@@ -115,7 +112,7 @@ func (dockerLoader *DockerLoader) listenEvents() {
 		Filters: args,
 	})
 
-	dockerLoader.logger.Info("Connecting to docker events")
+	caddy.Log().Info("Connecting to docker events")
 
 ListenEvents:
 	for {
@@ -143,7 +140,7 @@ ListenEvents:
 		case err := <-errorChan:
 			cancel()
 			if err != nil {
-				dockerLoader.logger.Error("Docker events error", zap.Error(err))
+				caddy.Log().Error("Docker events error", zap.Error(err))
 			}
 			break ListenEvents
 		}
@@ -154,34 +151,33 @@ func (dockerLoader *DockerLoader) update() bool {
 	dockerLoader.timer.Reset(dockerLoader.options.PollingInterval)
 	dockerLoader.skipEvents = false
 
-	caddyfile, controlledServers := dockerLoader.generator.GenerateCaddyfile(dockerLoader.logger)
+	caddyfile, controlledServers := dockerLoader.generator.GenerateCaddyfile(caddy.Log())
 
 	caddyfileChanged := !bytes.Equal(dockerLoader.lastCaddyfile, caddyfile)
 
 	dockerLoader.lastCaddyfile = caddyfile
 
 	if caddyfileChanged {
-		dockerLoader.logger.Info("New Caddyfile", zap.ByteString("caddyfile", caddyfile))
+		caddy.Log().Info("New Caddyfile", zap.ByteString("caddyfile", caddyfile))
 
 		adapter := caddyconfig.GetAdapter("caddyfile")
 
 		configJSON, warn, err := adapter.Adapt(caddyfile, nil)
 
 		if warn != nil {
-			dockerLoader.logger.Warn("Caddyfile to json warning: %v", zap.String("warn", fmt.Sprintf("%v", warn)))
+			caddy.Log().Warn("Caddyfile to json warning: %v", zap.String("warn", fmt.Sprintf("%v", warn)))
 		}
 
 		if err != nil {
-			dockerLoader.logger.Error("Failed to convert caddyfile into json config", zap.Error(err))
+			caddy.Log().Error("Failed to convert caddyfile into json config", zap.Error(err))
 			return false
 		}
 
-		dockerLoader.logger.Info("New Config JSON", zap.ByteString("json", configJSON))
+		caddy.Log().Info("New Config JSON", zap.ByteString("json", configJSON))
 
 		dockerLoader.lastJSONConfig = configJSON
 		dockerLoader.lastVersion++
 	}
-	dockerLoader.logger.Debug("DEBUG SOMETHING", zap.String("field", "value"))
 
 	var wg sync.WaitGroup
 	for _, server := range controlledServers {
@@ -212,43 +208,43 @@ func (dockerLoader *DockerLoader) updateServer(wg *sync.WaitGroup, server string
 		return
 	}
 
-	dockerLoader.logger.Info("Sending configuration to", zap.String("server", server))
+	caddy.Log().Info("Sending configuration to", zap.String("server", server))
 
 	url := "http://" + server + ":2019/load"
 
 	postBody, err := addAdminListen(dockerLoader.lastJSONConfig, "tcp/"+server+":2019")
 	if err != nil {
-		dockerLoader.logger.Error("Failed to add admin listen to", zap.String("server", server), zap.Error(err))
+		caddy.Log().Error("Failed to add admin listen to", zap.String("server", server), zap.Error(err))
 		return
 	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(postBody))
 	if err != nil {
-		dockerLoader.logger.Error("Failed to create request to", zap.String("server", server), zap.Error(err))
+		caddy.Log().Error("Failed to create request to", zap.String("server", server), zap.Error(err))
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 
 	if err != nil {
-		dockerLoader.logger.Error("Failed to send configuration to", zap.String("server", server), zap.Error(err))
+		caddy.Log().Error("Failed to send configuration to", zap.String("server", server), zap.Error(err))
 		return
 	}
 
 	bodyBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		dockerLoader.logger.Error("Failed to read response from", zap.String("server", server), zap.Error(err))
+		caddy.Log().Error("Failed to read response from", zap.String("server", server), zap.Error(err))
 		return
 	}
 
 	if resp.StatusCode != 200 {
-		dockerLoader.logger.Error("Error response from %v - %s", zap.String("server", server), zap.Int("status code", resp.StatusCode), zap.ByteString("body", bodyBytes))
+		caddy.Log().Error("Error response from %v - %s", zap.String("server", server), zap.Int("status code", resp.StatusCode), zap.ByteString("body", bodyBytes))
 		return
 	}
 
 	dockerLoader.serversVersions.Set(server, version)
 
-	dockerLoader.logger.Info("Successfully configured", zap.String("server", server))
+	caddy.Log().Info("Successfully configured", zap.String("server", server))
 }
 
 func addAdminListen(configJSON []byte, listen string) ([]byte, error) {
