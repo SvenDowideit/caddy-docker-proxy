@@ -26,6 +26,10 @@ func (g *CaddyfileGenerator) getServiceTemplatedCaddyfile(service *swarm.Service
 		// don't exit, we'll try again later..
 	}
 
+	matcher := strings.TrimPrefix(service.Spec.Name, "/")
+	logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Swarm service matcher %s\n", matcher))
+	logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Swarm service Labels %s\n", service.Spec.Labels))
+
 	funcMap := template.FuncMap{
 		"entitytype": func(options ...interface{}) (string, error) {
 			return "service", nil
@@ -47,19 +51,9 @@ func (g *CaddyfileGenerator) getServiceTemplatedCaddyfile(service *swarm.Service
 			return strings.Join(transformed, " "), err
 		},
 		"matcher": func(options ...interface{}) (string, error) {
-			// TODO: only a problem if we need to deal with _1...
-			matcher := strings.TrimPrefix(service.Spec.Name, "/")
-			logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Swarm service matcher %s\n", matcher))
-
 			return matcher, nil
 		},
 		"labels": func(options ...interface{}) (map[string]string, error) {
-			// TODO: mix in image labels - otherwise we miss things like image based virtual.port..
-
-			// TODO: this is not the only place services have labels :/
-
-			logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Swarm service Labels %s\n", service.Spec.Labels))
-
 			return service.Spec.Labels, nil
 		},
 		"hostname": func(options ...interface{}) (string, error) {
@@ -85,6 +79,11 @@ func (g *CaddyfileGenerator) getContainerTemplatedCaddyfile(container *types.Con
 		// don't exit, we'll try again later..
 	}
 
+	matcher := strings.TrimPrefix(container.Names[0], "/")
+	logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Container matcher %s\n", matcher))
+
+	logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Container Labels %s\n", container.Labels))
+
 	funcMap := template.FuncMap{
 		"entitytype": func(options ...interface{}) (string, error) {
 			return "container", nil
@@ -106,16 +105,9 @@ func (g *CaddyfileGenerator) getContainerTemplatedCaddyfile(container *types.Con
 			return strings.Join(transformed, " "), err
 		},
 		"matcher": func(options ...interface{}) (string, error) {
-			// TODO: only a problem if we need to deal with _1...
-			matcher := strings.TrimPrefix(container.Names[0], "/")
-			logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Container matcher %s\n", matcher))
-
 			return matcher, nil
 		},
 		"labels": func(options ...interface{}) (map[string]string, error) {
-			// TODO: mix in image labels...
-			logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Container Labels %s\n", container.Labels))
-
 			return container.Labels, nil
 		},
 		"hostname": func(options ...interface{}) (string, error) {

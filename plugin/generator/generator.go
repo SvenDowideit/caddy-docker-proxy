@@ -164,7 +164,7 @@ func (g *CaddyfileGenerator) GenerateCaddyfile() ([]byte, string, []string) {
 				// template files based config
 				containerTemplateCaddyfile, err := g.getServiceTemplatedCaddyfile(&service, &logsBuffer)
 				if err == nil {
-					logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Swarm service caddy template %s\n", containerTemplateCaddyfile.Marshal()))
+					// logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Swarm service caddy template %s\n", containerTemplateCaddyfile.Marshal()))
 					caddyfileBlock.Merge(containerTemplateCaddyfile)
 				} else {
 					logsBuffer.WriteString(fmt.Sprintf("[ERROR] %v\n", err.Error()))
@@ -213,7 +213,7 @@ func (g *CaddyfileGenerator) GenerateCaddyfile() ([]byte, string, []string) {
 			// template files based config
 			containerTemplateCaddyfile, err := g.getContainerTemplatedCaddyfile(&container, &logsBuffer)
 			if err == nil {
-				logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Container caddy template %s\n", containerTemplateCaddyfile.Marshal()))
+				// logsBuffer.WriteString(fmt.Sprintf("[DEBUG] Container caddy template %s\n", containerTemplateCaddyfile.Marshal()))
 
 				caddyfileBlock.Merge(containerTemplateCaddyfile)
 			} else {
@@ -252,6 +252,10 @@ func (g *CaddyfileGenerator) GenerateCaddyfile() ([]byte, string, []string) {
 	if g.options.Mode&config.Server == config.Server {
 		controlledServers = append(controlledServers, "localhost")
 	}
+
+	// TODO: make optional
+	// TODO: get the file location...
+	ioutil.WriteFile("/config/caddy/docker-plugin.caddyfile", caddyfileContent, 0644)
 
 	return caddyfileContent, logsBuffer.String(), controlledServers
 }
